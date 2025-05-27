@@ -7,6 +7,7 @@ from args import parse_args
 import random
 import copy
 
+import time
 import numpy as np
 import torch
 import wandb
@@ -19,21 +20,36 @@ from utils.avg import LGFedAvg, model_wise_FedAvg, FedAvg
 from utils.getGenTrainData import generator_traindata
 from utils.util import save_generated_images, evaluate_models
 from generators32.CCVAE import *
+from torchsummary import summary
 
+def count_parameters(model):
+    """统计模型的总参数量（可训练+不可训练）"""
+    return sum(p.numel() for p in model.parameters())
+
+def count_trainable_parameters(model):
+    """统计模型的可训练参数量"""
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 def main():
-
+    total_start = time.time()
+    init_start = time.time()
+    init_time = time.time() - init_start
     dataset_train, dataset_test, dict_users, local_models, common_net, w_comm, ws_glob, run = setup_experiment(args)
     print(args)
 
     loss_train = []
     gen_glob = CCVAE(args).to(args.device)
+    print("\n===== 生成模型参数量统计 =====")
+    gen_total_params = count_parameters(gen_glob)
+    gen_trainable_params = count_trainable_parameters(gen_glob)
+    print(f"生成器 (Generator) - 总参数量: {gen_total_params:,} | 可训练参数量: {gen_trainable_params:,}")
     opt = torch.optim.Adam(gen_glob.parameters(), lr=1e-3, weight_decay=0.001).state_dict()
     opts = [copy.deepcopy(opt) for _ in range(args.num_users)]
 
     ''' ---------------------------
     Federated Training generative model
     --------------------------- '''
+    gen_train_start = time.time()
     for iter in range(1, args.gen_wu_epochs+1):
         gen_w_local, loss_locals = [], []
         
@@ -47,15 +63,18 @@ def main():
         gen_w_glob = FedAvg(gen_w_local)
         gen_glob.load_state_dict(gen_w_glob)
         loss_avg = sum(loss_locals) / len(loss_locals)
-
+        
         if args.save_imgs and (iter % args.sample_test == 0 or iter == args.gen_wu_epochs):
             save_generated_images(args.save_dir, gen_glob, args, iter)
         print('Warm-up Gen Round {:3d}, Average loss {:.3f}'.format(iter, loss_avg))
-
+    gen_train_time = time.time() - gen_train_start    
     best_perf = [0 for _ in range(args.num_models)]
+    print("\n训练后生成模型参数量统计:")
+    print(f"生成器 (Generator) - 总参数量: {count_parameters(gen_glob):,}")
     ''' ----------------------------------------
     Train main networks by local sample and generated samples
     ---------------------------------------- '''
+    target_train_start = time.time()
     for iter in range(1,args.epochs+1):
         ws_local = [[] for _ in range(args.num_models)]
         gen_w_local, loss_locals, gen_loss_locals  = [], [], []
@@ -101,10 +120,18 @@ def main():
         loss_train.append(loss_avg)
         if iter == 1 or iter % args.sample_test == 0 or iter == args.epochs:
             best_perf = evaluate_models(local_models, ws_glob, dataset_test, args, iter, best_perf)
-
+    target_train_time = time.time() - target_train_start
     print(best_perf, 'AVG'+str(args.rs), sum(best_perf)/len(best_perf))
-    torch.save(gen_w_glob, 'checkpoint/FedCVAE' + str(args.name) + str(args.rs) + '.pt')
-        
+
+    total_time = time.time() - total_start
+    print(f"""
+    ======= Time Report =======
+    Total Time: {total_time:.2f}s
+    - Initialization: {init_time:.2f}s
+    - Generative Training: {gen_train_time:.2f}s
+    - Target Training: {target_train_time:.2f}s
+    ===========================
+    """)   
     if args.wandb:
         run.finish()
 

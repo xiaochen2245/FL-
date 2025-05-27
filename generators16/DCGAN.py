@@ -7,7 +7,10 @@ output shape of conv2dtranspose k=kernel, s=stride, p=padding
 1d input length l -> l + (s-1)*(l-1) + 2*(k-p-1)
 then Conv by k*k kernel, stride=1
 output shape: l + (s-1)*(l-1) + 2*(k-p-1) - k + 1
-
+l：输入特征图的长度（高度或宽度）
+k：卷积核的大小
+s：步幅
+p：填充
 torch.nn.ConvTranspose2d(in_channels, out_channels, kernel_size, stride, padding)
 def output_shape(l,k,s,p):
     return l + (s-1)*(l-1) + 2*(k-p-1) - k + 1

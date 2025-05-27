@@ -31,7 +31,7 @@ class LocalUpdate_DCGAN(object):
         gnet.train()
         dnet.train()
         
-        # train and update
+        # 训练和更新
         G_optimizer = torch.optim.Adam(gnet.parameters(), lr=self.args.lr, betas=(self.args.b1, self.args.b2))
         D_optimizer = torch.optim.Adam(dnet.parameters(), lr=self.args.lr, betas=(self.args.b1, self.args.b2))
         if optg:
@@ -39,22 +39,13 @@ class LocalUpdate_DCGAN(object):
         if optd:
             D_optimizer.load_state_dict(optd)
 
-        # if iter == int(0.5*self.args.gen_wu_epochs):
-        #     G_optimizer.param_groups[0]['lr'] /= 10
-        #     D_optimizer.param_groups[0]['lr'] /= 10
-        #     print("learning rate change!")
-        # elif iter == int(0.75*self.args.gen_wu_epochs):
-        #     G_optimizer.param_groups[0]['lr'] /= 10
-        #     D_optimizer.param_groups[0]['lr'] /= 10
-        #     print("learning rate change!")
 
         g_epoch_loss = []
         d_epoch_loss = []
 
-        # adversarial_loss = torch.nn.MSELoss()
         BCE_loss = nn.BCELoss().to(self.args.device)
 
-        # label preprocess
+        # 标签预处理
         onehot = torch.zeros(10, 10)
         img_size = self.args.img_shape[1]
         batch_size = self.args.local_bs
@@ -76,8 +67,12 @@ class LocalUpdate_DCGAN(object):
                 
             for batch_idx, (x_, y_) in enumerate(self.ldr_train):
                 ''' ---------------------------------
-                Train Discriminator
+                训练判别器
                 maximize log(D(x)) + log(1 - D(G(z)))
+                D(x):判别器对真实数据x的判别概率
+                D(G(z)):判别器对生成数据G(z) 的判别概率
+                z:生成器的输入噪声
+                G(z):生成器根据噪声z生成的数据
                 --------------------------------- '''
                 dnet.zero_grad()
                 mini_batch = x_.size()[0]
@@ -114,7 +109,7 @@ class LocalUpdate_DCGAN(object):
                 D_losses.append(D_train_loss.data)
 
                 ''' -------------------
-                Train Generator
+                训练生成器
                 maximize log(D(G(z)))
                 ------------------- '''
                 gnet.zero_grad()

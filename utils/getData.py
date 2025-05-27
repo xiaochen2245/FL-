@@ -3,7 +3,6 @@ import random
 from torchvision import datasets, transforms
 from torch.utils.data import Dataset
 
-# import lasagne
 import pickle
 import os
 
@@ -11,7 +10,7 @@ def unpickle(file):
     with open(file, 'rb') as fo:
         dict = pickle.load(fo)
     return dict
-
+#加载pickle文件
 
 class DatasetSplit(Dataset):
 
@@ -25,7 +24,7 @@ class DatasetSplit(Dataset):
     def __getitem__(self, item):
         image, label = self.dataset[self.idxs[item]]
         return image, label
-
+#创建一个子数据集，包含指定索引的数据
 
 def dict_iid(dataset, num_users):
 
@@ -36,13 +35,11 @@ def dict_iid(dataset, num_users):
         dict_users[i] = set(np.random.choice(all_idxs, num_items, replace=False))
         all_idxs = list(set(all_idxs) - dict_users[i])
     return dict_users
+#生成**独立同分布（IID）**的数据划分
 
 def mnist_noniid(dataset, num_users, seed):
     """
-    Sample non-I.I.D client data from MNIST dataset
-    :param dataset:
-    :param num_users:
-    :return:
+    从 MNIST 数据集中采样非独立同分布的客户端数据
     """
     np.random.seed(seed)
 
@@ -53,12 +50,12 @@ def mnist_noniid(dataset, num_users, seed):
     idxs = np.arange(num_shards*num_imgs)
     labels = dataset.train_labels.numpy() # targets
 
-    # sort labels
+    # 标签排序
     idxs_labels = np.vstack((idxs, labels))
     idxs_labels = idxs_labels[:,idxs_labels[1,:].argsort()] # label-wise sort
     idxs = idxs_labels[0,:]
 
-    # divide and assign
+    # 划分并分配
     for i in range(num_users):
         rand_set = set(np.random.choice(idx_shard, 2, replace=False))
         idx_shard = list(set(idx_shard) - rand_set)
@@ -68,10 +65,7 @@ def mnist_noniid(dataset, num_users, seed):
 
 def cifar_noniid(args, dataset):
     """
-    Sample non-I.I.D client data from CIFAR dataset 50000
-    :param dataset:
-    :param num_users:
-    :return:
+    从 CIFAR 数据集抽取 50000 个非独立同分布的客户端数据样本
     """
     np.random.seed(args.rs)
 
@@ -82,12 +76,12 @@ def cifar_noniid(args, dataset):
     idxs = np.arange(num_shards*num_imgs)
     labels = np.array(dataset.targets)
     
-    # sort labels
+    # 标签排序
     idxs_labels = np.vstack((idxs, labels))
     idxs_labels = idxs_labels[:,idxs_labels[1,:].argsort()] # label-wise sort
     idxs = idxs_labels[0,:]
 
-    # divide and assign
+    # 划分并分配
     for i in range(args.num_users):
         rand_set = set(np.random.choice(idx_shard, args.class_per_each_client, replace=False))
         idx_shard = list(set(idx_shard) - rand_set)
@@ -98,8 +92,8 @@ def cifar_noniid(args, dataset):
 
 def noniid_dir(args, beta, dataset):
     '''
-    Dirichlet distribution
-    smaller beta > 0 parition is more unbalanced
+    狄利克雷分布
+    较小的β>0 分割更加不平衡
     '''
 
     np.random.seed(args.rs)
@@ -113,26 +107,15 @@ def noniid_dir(args, beta, dataset):
 
     while min_size < min_require_size:
         idx_batch = [[] for _ in range(args.num_users)]
-        for k in range(args.num_classes): # class-by-class
+        for k in range(args.num_classes): 
             idx_k = np.where(labels == k)[0]
             np.random.shuffle(idx_k)
-            proportions = np.random.dirichlet(np.repeat(beta, args.num_users)) # same beta for all users
-            # logger.info("proportions1: ", proportions)
-            # logger.info("sum pro1:", np.sum(proportions))
-            ## Balance
+            proportions = np.random.dirichlet(np.repeat(beta, args.num_users)) # 所有用户使用同一个β
             proportions = np.array([p * (len(idx_j) < N / args.num_users) for p, idx_j in zip(proportions, idx_batch)])
-            # p*True = p / p*False = 0
-            # logger.info("proportions2: ", proportions)
             proportions = proportions / proportions.sum()
-            # logger.info("proportions3: ", proportions)
             proportions = (np.cumsum(proportions) * len(idx_k)).astype(int)[:-1]
-            # logger.info("proportions4: ", proportions)
             idx_batch = [idx_j + idx.tolist() for idx_j, idx in zip(idx_batch, np.split(idx_k, proportions))]
             min_size = min([len(idx_j) for idx_j in idx_batch])
-            # if K == 2 and n_parties <= 10:
-            #     if np.min(proportions) < 200:
-            #         min_size = 0
-            #         break
 
 
     for j in range(args.num_users):
@@ -154,24 +137,22 @@ def getDataset(args):
             transforms.Normalize((0.1307,), (0.3081,)),
         ])
         
-        dataset_train = datasets.MNIST('/home/hong/NeFL/.data/mnist', train=True, download=True, transform=transform_train)
-        dataset_test = datasets.MNIST('/home/hong/NeFL/.data/mnist', train=False, download=True, transform=transform_test)
+        dataset_train = datasets.MNIST('/datasets/chen/.data/mnist', train=True, download=True, transform=transform_train)
+        dataset_test = datasets.MNIST('/datasets/chen/.data/mnist', train=False, download=True, transform=transform_test)
 
     elif args.dataset == 'mnist' and 'cnn' in args.models:
         transform_train = transforms.Compose([
             transforms.ToTensor(),
             transforms.Resize(args.orig_img_size),
-            # transforms.Normalize((0.1307,), (0.3081,)), # DCGAN 0.5
         ])
 
         transform_test = transforms.Compose([
             transforms.ToTensor(),
             transforms.Resize(args.orig_img_size),
-            # transforms.Normalize((0.1307,), (0.3081,)), # DCGAN 0.5
         ])
         
-        dataset_train = datasets.MNIST('/home/hong/NeFL/.data/mnist', train=True, download=True, transform=transform_train)
-        dataset_test = datasets.MNIST('/home/hong/NeFL/.data/mnist', train=False, download=True, transform=transform_test)
+        dataset_train = datasets.MNIST('/datasets/chen/.data/mnist', train=True, download=True, transform=transform_train)
+        dataset_test = datasets.MNIST('/datasets/chen/.data/mnist', train=False, download=True, transform=transform_test)
 
     elif args.dataset == 'fmnist' and 'mlp' in args.models:
         transform_train = transforms.Compose([
@@ -184,14 +165,14 @@ def getDataset(args):
             transforms.Normalize((0.5,), (0.5,)),
         ])
         
-        dataset_train = datasets.FashionMNIST('/home/hong/NeFL/.data/fmnist', train=True, download=True, transform=transform_train)
-        dataset_test = datasets.FashionMNIST('/home/hong/NeFL/.data/fmnist', train=False, download=True, transform=transform_test)
+        dataset_train = datasets.FashionMNIST('/datasets/chen/.data/fmnist', train=True, download=True, transform=transform_train)
+        dataset_test = datasets.FashionMNIST('/datasets/chen/.data/fmnist', train=False, download=True, transform=transform_test)
 
     elif args.dataset == 'fmnist' and 'cnn' in args.models:
         transform_train = transforms.Compose([
             transforms.ToTensor(),
             transforms.Resize(args.orig_img_size),
-            transforms.Normalize((0.5,), (0.5,)), # (0.2860,), (0.3530,)
+            transforms.Normalize((0.5,), (0.5,)), 
         ])
 
         transform_test = transforms.Compose([
@@ -200,13 +181,13 @@ def getDataset(args):
             transforms.Normalize((0.5,), (0.5,)),
         ])
         
-        dataset_train = datasets.FashionMNIST('/home/hong/NeFL/.data/fmnist', train=True, download=True, transform=transform_train)
-        dataset_test = datasets.FashionMNIST('/home/hong/NeFL/.data/fmnist', train=False, download=True, transform=transform_test)
+        dataset_train = datasets.FashionMNIST('/datasets/chen/.data/fmnist', train=True, download=True, transform=transform_train)
+        dataset_test = datasets.FashionMNIST('/datasets/chen/.data/fmnist', train=False, download=True, transform=transform_test)
                 
     elif args.dataset =='cifar10':
-        ## CIFAR
+        ## CIFAR数据集 包含10类物体的彩色图像数据集
         transform_train = transforms.Compose([
-            transforms.RandomCrop(32, padding=4), # transforms.Resize(256), transforms.RandomCrop(224),
+            transforms.RandomCrop(32, padding=4), 
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
@@ -216,15 +197,12 @@ def getDataset(args):
             transforms.ToTensor(),
             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ])
-        dataset_train = datasets.CIFAR10('/home/hong/NeFL/.data/cifar', train=True, download=True, transform=transform_train)
-        dataset_test = datasets.CIFAR10('/home/hong/NeFL/.data/cifar', train=False, download=True, transform=transform_test)
+        dataset_train = datasets.CIFAR10('/datasets/chen/.data/cifar', train=True, download=True, transform=transform_train)
+        dataset_test = datasets.CIFAR10('/datasets/chen/.data/cifar', train=False, download=True, transform=transform_test)
 
     elif args.dataset == 'svhn':
-        ### SVHN
+        ### SVHN数据集 街景门牌号数据集，包含门牌号图像
         transform_train = transforms.Compose([
-                # transforms.Pad(padding=2),
-                # transforms.RandomCrop(size=(32, 32)),
-                # transforms.ColorJitter(brightness=63. / 255., saturation=[0.5, 1.5], contrast=[0.2, 1.8]),
                 transforms.ToTensor(),
                 transforms.Normalize((0.4376821, 0.4437697, 0.47280442), (0.19803012, 0.20101562, 0.19703614))
             ])
@@ -233,11 +211,11 @@ def getDataset(args):
                 transforms.ToTensor(),
                 transforms.Normalize((0.4376821, 0.4437697, 0.47280442), (0.19803012, 0.20101562, 0.19703614))
             ])
-        dataset_train = datasets.SVHN('/home/hong/NeFL/.data/svhn', split='train', download=True, transform=transform_train)
-        dataset_test = datasets.SVHN('/home/hong/NeFL/.data/svhn', split='test', download=True, transform=transform_test)
+        dataset_train = datasets.SVHN('/datasets/chen/.data/svhn', split='train', download=True, transform=transform_train)
+        dataset_test = datasets.SVHN('/datasets/chen/.data/svhn', split='test', download=True, transform=transform_test)
 
     elif args.dataset == 'stl10':
-        ### STL10
+        ### STL10数据集 包含10类物体的图像数据集，常用于无监督学习
         transform_train = transforms.Compose([
                         transforms.RandomCrop(96, padding=4),
                         transforms.RandomHorizontalFlip(),
@@ -250,47 +228,7 @@ def getDataset(args):
                         transforms.Normalize([0.4914, 0.4822, 0.4465],
                                             [0.2471, 0.2435, 0.2616])
                 ])
-        dataset_train = datasets.STL10('/home/hong/NeFL/.data/stl10', split='train', download=True, transform=transform_train)
-        dataset_test = datasets.STL10('/home/hong/NeFL/.data/stl10', split='test', download=True, transform=transform_test)
+        dataset_train = datasets.STL10('/datasets/chen/.data/stl10', split='train', download=True, transform=transform_train)
+        dataset_test = datasets.STL10('/datasets/chen/.data/stl10', split='test', download=True, transform=transform_test)
 
-    ### downsampled ImageNet
-    # imagenet_data = datasets.ImageNet('/home')
-        
-    ### Flowers
-    # tranform_train = transforms.Compose([
-    #                                     #   transforms.RandomRotation(30),
-    #                                     #   transforms.RandomResizedCrop(224),
-    #                                       transforms.RandomHorizontalFlip(),
-    #                                       transforms.ToTensor(), 
-    #                                       transforms.Normalize([0.485, 0.456, 0.406], 
-    #                                                            [0.229, 0.224, 0.225])
-    #                                      ])
-        
-    # tranform_test = transforms.Compose([
-    #                                     #   transforms.Resize(256),
-    #                                     #   transforms.CenterCrop(224),
-    #                                       transforms.ToTensor(),
-    #                                       transforms.Normalize([0.485, 0.456, 0.406], 
-    #                                                            [0.229, 0.224, 0.225])
-    #                                      ])
-
-    # dataset_train = datasets.Flowers102('/home/hong/NeFL/.data/flowers102', download=True, transform=tranform_train)
-    # dataset_test = datasets.Flowers102('/home/hong/NeFL/.data/flowers102', split='test', download=True, transform=tranform_test)
-    # split='train',
-
-    ### Food 101
-    # tranform_train = transforms.Compose([transforms.RandomRotation(30),
-    #                                        transforms.RandomResizedCrop(224),
-    #                                        transforms.RandomHorizontalFlip(),ImageNetPolicy(),
-    #                                        transforms.ToTensor(),
-    #                                        transforms.Normalize([0.485, 0.456, 0.406],
-    #                                                             [0.229, 0.224, 0.225])])
-
-    # tranform_test = transforms.Compose([transforms.Resize(255),
-    #                                       transforms.CenterCrop(224),
-    #                                       transforms.ToTensor(),
-    #                                       transforms.Normalize([0.485, 0.456, 0.406],
-    #                                                            [0.229, 0.224, 0.225])])
-    # dataset_train = datasets.Food101('/home/hong/NeFL/.data/food101', split='train', download=True, transform=tranform_train)
-    # dataset_test = datasets.Food101('/home/hong/NeFL/.data/food101', split='test', download=True, transform=tranform_test)
     return dataset_train, dataset_test

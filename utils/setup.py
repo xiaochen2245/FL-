@@ -9,11 +9,11 @@ from utils.getModels import getModel
 def setup_experiment(args):
 
     if args.gen_model == 'ddpm':
-        args.save_dir = 'imgs/FedDDPM/'
+        args.save_dir = 'imgs/FLWG_FedDDPM/'
     elif args.gen_model == 'vae':
-        args.save_dir = 'imgs/FedCVAE/'
+        args.save_dir = 'imgs/FLWG_FedCVAE/'
     elif args.gen_model == 'gan':
-        args.save_dir = 'imgs/FedDCGAN/'
+        args.save_dir = 'imgs/FLWG_FedDCGAN/'
     elif args.gen_model == 'vaef':
         args.save_dir = 'imgs/FedCVAEF/'
     elif args.gen_model == 'ganf':
@@ -37,7 +37,7 @@ def setup_experiment(args):
     ws_glob = [local_models[_].state_dict() for _ in range(args.num_models)]
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    filename = f'./output/gefl/{timestamp}{args.name}{args.rs}'
+    filename = f'./output/FLWG/{timestamp}{args.name}{args.rs}'
     if not os.path.exists(filename):
         os.makedirs(filename)
         

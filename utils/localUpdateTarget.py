@@ -21,7 +21,7 @@ class DatasetSplit(Dataset):
         return image, label
 
 ##########################################
-#                  GeFL                  #
+#                  FLWG                  #
 ##########################################
 
 class LocalUpdate(object):
@@ -92,7 +92,7 @@ class LocalUpdate(object):
         return net.state_dict(), sum(epoch_loss) / len(epoch_loss), gen_loss
 
 
-# train only headers of Target networks #
+# 只训练目标网络的最后几层，也就是异构的部分 #
 class LocalUpdate_header(object):
     def __init__(self, args, dataset=None, idxs=None):
         self.args = args

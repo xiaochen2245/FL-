@@ -1,10 +1,12 @@
 from args import parse_args
 import random
 import copy
-
+import time
 import numpy as np
 import torch
 import wandb
+from torchsummary import summary
+import matplotlib.pyplot as plt
 
 from utils.user_sampling import user_select
 from utils.setup import setup_experiment
@@ -15,9 +17,18 @@ from utils.getGenTrainData import generator_traindata
 from generators32.DCGAN import *
 from utils.util import save_generated_images, evaluate_models
 
+def count_parameters(model):
+    """统计模型的总参数量（可训练+不可训练）"""
+    return sum(p.numel() for p in model.parameters())
+
+def count_trainable_parameters(model):
+    """统计模型的可训练参数量"""
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 def main():
-    
+    total_start = time.time()
+    init_start = time.time()
+    init_time = time.time() - init_start
     dataset_train, dataset_test, dict_users, local_models, common_net, w_comm, ws_glob, run = setup_experiment(args)
     print(args)            
 
@@ -26,14 +37,24 @@ def main():
     dis_glob = discriminator(args, d=128).to(args.device)
     gen_glob.weight_init(mean=0.0, std=0.02)
     dis_glob.weight_init(mean=0.0, std=0.02)
+    print("\n===== 生成模型参数量统计 =====")
+    gen_total_params = count_parameters(gen_glob)
+    gen_trainable_params = count_trainable_parameters(gen_glob)
+    print(f"生成器 (Generator) - 总参数量: {gen_total_params:,} | 可训练参数量: {gen_trainable_params:,}")
+
+    dis_total_params = count_parameters(dis_glob)
+    dis_trainable_params = count_trainable_parameters(dis_glob)
+    print(f"判别器 (Discriminator) - 总参数量: {dis_total_params:,} | 可训练参数量: {dis_trainable_params:,}")
+    print("=" * 40 + "\n")
     optg = torch.optim.Adam(gen_glob.parameters(), lr=args.gan_lr, betas=(args.b1, args.b2)).state_dict()
     optd = torch.optim.Adam(dis_glob.parameters(), lr=args.gan_lr, betas=(args.b1, args.b2)).state_dict()    
     optgs = [copy.deepcopy(optg) for _ in range(args.num_users)]
     optds = [copy.deepcopy(optd) for _ in range(args.num_users)]
 
     ''' ---------------------------
-    Federated Training generative model
+    联邦训练生成模型
     --------------------------- '''    
+    gen_train_start = time.time()
     for iter in range(1, args.gen_wu_epochs+1):
         gen_w_local, dis_w_local, gloss_locals, dloss_locals = [], [], [], []
         
@@ -55,14 +76,18 @@ def main():
         if args.save_imgs and (iter % args.sample_test == 0 or iter == args.gen_wu_epochs):
             save_generated_images(args.save_dir, gen_glob, args, iter)
         print('Warm-up Gen Round {:3d}, G Avg loss {:.3f}, D Avg loss {:.3f}'.format(iter, gloss_avg, dloss_avg))
-
+    gen_train_time = time.time() - gen_train_start
+    print("\n训练后生成模型参数量统计:")
+    print(f"生成器 (Generator) - 总参数量: {count_parameters(gen_glob):,}")
+    print(f"判别器 (Discriminator) - 总参数量: {count_parameters(dis_glob):,}\n")
     # torch.save(gen_w_glob, 'models/save/Fed' + '_' + str(args.models) + '_DCGAN_G_sameSize.pt')
     
     best_perf = [0 for _ in range(args.num_models)]
 
     ''' ----------------------------------------
-    Train main networks by local sample and generated samples, then update generator
+    通过本地样本和生成样本训练主要网络, 然后更新生成器
     ---------------------------------------- '''
+    target_train_start = time.time()
     for iter in range(1, args.epochs+1):
         ws_local = [[] for _ in range(args.num_models)]
         gen_w_local, dis_w_local = [], []
@@ -80,7 +105,7 @@ def main():
                 weight, loss, gen_loss = local.train(net=copy.deepcopy(model).to(args.device), gennet=copy.deepcopy(gen_glob), learning_rate=args.lr)
             else:
                 local = LocalUpdate(args, dataset=dataset_train, idxs=dict_users[idx])
-                if args.aid_by_gen: # synthetic data updates header & real data updates whole target network
+                if args.aid_by_gen: # 生成数据仅用于更新模型的 header 部分，即模型的最后几层  真实数据用于更新整个目标网络，包括特征提取层和 header 部分
                     weight, loss, gen_loss = local.train(net=copy.deepcopy(model).to(args.device), gennet=copy.deepcopy(gen_glob), learning_rate=args.lr)
                 else:
                     weight, loss, gen_loss = local.train(net=copy.deepcopy(model).to(args.device), learning_rate=args.lr)
@@ -113,7 +138,7 @@ def main():
             dloss_avg = -1
 
         if args.avg_FE: # LG-FedAVG
-            ws_glob, w_comm = LGFedAvg(args, ws_glob, ws_local, w_comm) # main net, feature extractor weight update
+            ws_glob, w_comm = LGFedAvg(args, ws_glob, ws_local, w_comm) # 整个网络的权重更新
         else: # FedAVG
             ws_glob = model_wise_FedAvg(args, ws_glob, ws_local)
         loss_avg = sum(loss_locals) / len(loss_locals)
@@ -126,10 +151,18 @@ def main():
         loss_train.append(loss_avg)
         if iter == 1 or iter % args.sample_test == 0 or iter == args.epochs:
             best_perf = evaluate_models(local_models, ws_glob, dataset_test, args, iter, best_perf)
-                                    
+    target_train_time = time.time() - target_train_start
     print(best_perf, 'AVG'+str(args.rs), sum(best_perf)/len(best_perf))
     torch.save(gen_w_glob, 'checkpoint/FedDCGAN' + str(args.name) + str(args.rs) + '.pt')
-
+    total_time = time.time() - total_start
+    print(f"""
+    ======= Time Report =======
+    Total Time: {total_time:.2f}s
+    - Initialization: {init_time:.2f}s
+    - Generative Training: {gen_train_time:.2f}s
+    - Target Training: {target_train_time:.2f}s
+    ===========================
+    """)
     if args.wandb:
         run.finish()
 
